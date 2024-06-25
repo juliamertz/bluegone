@@ -2,6 +2,7 @@ mod backends;
 mod utils;
 
 use anyhow::Result;
+use backends::Backend;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -19,9 +20,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let backend = match args.backend {
-        Some(ref backend) => backends::get_backend_from_str(backend),
-        None => backends::get_backend_from_str("x11"),
-    }?;
+        Some(val) => Backend::try_from(val.as_str())?,
+        None => Backend::X11,
+    };
 
     if let Some(temp) = args.temperature {
         backend.set_temperature(temp)?;
