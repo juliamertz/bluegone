@@ -1,0 +1,21 @@
+backend = 'X11'
+
+[location]
+latitude = 0
+longitude = 0
+
+[[presets]]
+name = "day"
+temperature = 6500
+
+[[presets]]
+name = "night"
+temperature = 4000
+
+[[schedule]]
+trigger = "sunset"
+preset = "night"
+
+[[schedule]]
+trigger = "sunrise"
+preset = "day"
