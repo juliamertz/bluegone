@@ -7,6 +7,10 @@ use anyhow::Result;
 use chrono::Timelike;
 
 pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
+    if config.mode == config::Mode::Static {
+        anyhow::bail!("Static mode is not supported in the daemon.");
+    }
+
     let schedule_needs_location = config
         .schedule
         .iter()
@@ -34,8 +38,7 @@ fn start_event_loop(config: &Configuration, event: Schedule, backend: &Backend) 
     let now = chrono::Local::now();
     let next_minute = now.with_minute(now.minute() + 1).unwrap().remove_seconds();
 
-    // add check to see if the event happens before this time runs out, if so
-    // we can just spawn a new thread and let it sleep until the event happens
+    // TODO: Handle events that are scheduled before the next minute
     let until_next_minute = next_minute.signed_duration_since(now).to_std()?;
     println!("Sleeping until next minute: {:?}", until_next_minute);
     std::thread::sleep(until_next_minute);
@@ -74,5 +77,5 @@ fn start_event_loop(config: &Configuration, event: Schedule, backend: &Backend) 
         start_event_loop(config, next_event, backend)?;
     }
 
-    unreachable!()
+    Err(anyhow::anyhow!("No next event found"))
 }
