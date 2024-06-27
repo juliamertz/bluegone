@@ -192,7 +192,7 @@ pub fn get_next_scheduled_event(
     dbg!(&result);
 
     if result.is_empty() || result.len() == 0 {
-        return Err(anyhow::anyhow!("No events found"));
+        anyhow::bail!("No events found");
     }
 
     Ok(result[0].clone())
