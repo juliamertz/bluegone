@@ -1,5 +1,6 @@
+/// Transforms temperature in Kelvin to Gamma values between 0 and 1.
+/// Source: http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
 pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
-    // Function to map RGB values to gamma-corrected values between 0 and 1
     fn rgb_to_gamma(color: f64) -> f64 {
         if color < 0.0 {
             0.0
@@ -12,7 +13,7 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
 
     let temp = temp / 100.0;
 
-    // Calculate red component
+    // red
     let r: f64;
     if temp <= 66.0 {
         r = 255.0;
@@ -21,7 +22,7 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
         r = 329.698727446 * t.powf(-0.1332047592);
     }
 
-    // Calculate green component
+    // green
     let mut g: f64;
     if temp <= 66.0 {
         g = temp;
@@ -31,7 +32,7 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
         g = 288.1221695283 * t.powf(-0.0755148492);
     }
 
-    // Calculate blue component
+    // blue
     let b: f64;
     if temp <= 10.0 {
         b = 0.0;
