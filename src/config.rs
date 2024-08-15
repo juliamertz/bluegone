@@ -97,10 +97,7 @@ impl ScheduleLightTrigger {
             location.longitude,
         );
 
-        let time_from_millis = |millis: i64| {
-            
-            DateTime::from_timestamp(millis, 0).unwrap().time()
-        };
+        let time_from_millis = |millis: i64| DateTime::from_timestamp(millis, 0).unwrap().time();
 
         let result = params.calculate()?;
 
@@ -237,16 +234,12 @@ impl<'a> Deserialize<'a> for Schedule {
         let has_preset = table.contains_key("preset");
 
         match (has_temperature, has_preset) {
-            (true, true) => {
-                Err(serde::de::Error::custom(
-                    "Cannot have both temperature and preset fields",
-                ))
-            }
-            (false, false) => {
-                Err(serde::de::Error::custom(
-                    "Must have either temperature or preset field",
-                ))
-            }
+            (true, true) => Err(serde::de::Error::custom(
+                "Cannot have both temperature and preset fields",
+            )),
+            (false, false) => Err(serde::de::Error::custom(
+                "Must have either temperature or preset field",
+            )),
             (true, false) => {
                 let temperature = table.get("temperature").unwrap();
                 let temperature = Temperature::deserialize(temperature.clone()).unwrap();
