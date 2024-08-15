@@ -1,25 +1,65 @@
 use crate::{
     backends::{Backend, Temperature},
     config::{self, Configuration, Mode},
-    state::{self},
+    state,
     utils::RemoveSeconds,
 };
 use anyhow::Result;
 use bluegone::Pid;
 use chrono::Timelike;
+use daemonize_me::Daemon;
+use sysinfo::System;
 
-pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
+pub fn start_daemon(
+    background: &bool,
+    config: Configuration,
+    backend: &Backend,
+    sys: &mut System,
+) -> Result<()> {
     if config.mode == config::Mode::Static {
         anyhow::bail!("Static mode is not supported in the daemon.");
     }
 
-    state::write::<Pid>(std::process::id().into())?;
+    if let Some(pid) = state::read::<Pid>() {
+        match find_process_by_id(pid, sys) {
+            None => state::delete::<Pid>(),
+            Some(_) => anyhow::bail!("Daemon already running."),
+        }?;
+    }
 
-    let schedule = parse_schedule(&config);
-    dbg!(schedule);
+    match *background {
+        true => {
+            Daemon::new()
+                .pid_file(state::file_path::<Pid>(), Some(false))
+                // .stdout(stdout).stderr(stderr) TODO: LOG FILE
+                .start()?;
+        }
+        false => {
+            let pid: Pid = std::process::id().into();
+            state::write(pid)?;
+        }
+    }
+
     start_event_loop(&config, backend)?;
 
     Ok(())
+}
+
+pub fn stop_daemon(sys: &mut System) -> Result<()> {
+    match state::read::<Pid>() {
+        Some(pid) => match find_process_by_id(pid, sys) {
+            Some(process) => process.kill(),
+            None => anyhow::bail!("No active daemon found."),
+        },
+        None => anyhow::bail!("No active daemon found."),
+    };
+
+    Ok(())
+}
+
+fn find_process_by_id(pid: Pid, sys: &mut System) -> Option<&sysinfo::Process> {
+    let pid_state = &sysinfo::Pid::from_u32(pid.as_u32());
+    sys.processes().get(pid_state)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,10 +73,11 @@ fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
     let mut mapped: Vec<(chrono::NaiveTime, Temperature)> = config
         .schedule
         .iter()
-        .filter_map(|s| {
-            match s.get_time(&config.location) {
-                Ok(time) => Some((time, s.get_temperature(&config.presets))),
-                Err(_) => None, // FIX: Don't just ignore invalid schedule entries
+        .filter_map(|s| match s.get_time(&config.location) {
+            Ok(time) => Some((time, s.get_temperature(&config.presets))),
+            Err(_) => {
+                eprintln!("Using time based schedule entry but no location was provided!");
+                None
             }
         })
         .collect();
@@ -57,7 +98,7 @@ fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
     result
 }
 
-pub fn get_current_schedule_block(schedule: Vec<ScheduleBlock>) -> Option<ScheduleBlock> {
+pub fn get_current_schedule(schedule: Vec<ScheduleBlock>) -> Option<ScheduleBlock> {
     let now = chrono::Local::now();
     let midnight = chrono::NaiveTime::parse_from_str("00:00:00", "%H:%M:%S").unwrap();
 
@@ -90,16 +131,22 @@ fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
     loop {
         let now = chrono::Local::now().remove_seconds().time();
         let mode: Mode = match state::read() {
-            Ok(mode) => mode,
-            Err(_) => config.mode.clone(),
+            Some(mode) => mode,
+            None => config.mode.clone(),
         };
 
         println!("Checking event at {:?}", now);
 
-        if mode == Mode::Dynamic {
-            let schedule = parse_schedule(config); // TODO: optimize
-            if let Some(block) = get_current_schedule_block(schedule) {
-                backend.set_temperature(block.temperature)?;
+        match mode {
+            Mode::Dynamic => {
+                let schedule = parse_schedule(config); // TODO: optimize
+                if let Some(block) = get_current_schedule(schedule) {
+                    backend.set_temperature(block.temperature)?;
+                    println!("Setting temperature to {}", block.temperature)
+                }
+            }
+            Mode::Static => {
+                println!("Mode is set to static, sleeping until next minute")
             }
         }
 

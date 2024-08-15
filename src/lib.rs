@@ -7,6 +7,12 @@ pub trait StateFileName {
 #[derive(Clone)]
 pub struct Pid(pub u32);
 
+impl Pid {
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
+
 impl From<u32> for Pid {
     fn from(value: u32) -> Self {
         Self(value)

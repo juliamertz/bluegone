@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf, sync::OnceLock};
+use std::{fmt::Display, path::PathBuf, str::FromStr, sync::OnceLock};
 
 use crate::{
     backends::{Backend, Temperature},
@@ -22,14 +22,13 @@ pub struct Configuration {
     pub schedule: Vec<Schedule>,
 }
 
-// Root is considered to be the users home directory
+static CONFIG: OnceLock<Configuration> = OnceLock::new();
 static CONFIG_PATHS: [&str; 3] = [
-    "/.config/bluegone/config.toml",
-    "/.config/bluegone.toml",
-    "/.bluegone.toml",
+    "~/.config/bluegone/config.toml",
+    "~/.config/bluegone.toml",
+    "~/.bluegone.toml",
 ];
 
-static CONFIG: OnceLock<Configuration> = OnceLock::new();
 impl Configuration {
     fn from_str(content: &str) -> Result<Self> {
         let config = match toml::from_str::<Self>(content) {
@@ -45,7 +44,6 @@ impl Configuration {
 
     fn from_path(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        println!("Reading configuration from {:?}", path);
         Self::from_str(&content)
     }
 
@@ -61,12 +59,15 @@ impl Configuration {
             }
             None => {
                 for path in CONFIG_PATHS.iter() {
-                    let path = path.strip_prefix('/').expect("Path to be valid");
-                    let path = utils::home_dir().join(path);
+                    let path = match path.strip_prefix("~/") {
+                        Some(path) => utils::home_dir().join(path),
+                        None => PathBuf::from_str(path)?,
+                    };
 
                     if std::fs::metadata(&path).is_err() {
                         continue;
                     }
+
                     let data = Self::from_path(&path)?;
                     CONFIG.set(data).expect("OnceLock to be unlocked");
                     break;

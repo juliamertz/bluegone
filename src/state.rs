@@ -14,15 +14,35 @@ where
     Ok(())
 }
 
-pub fn read<T>() -> anyhow::Result<T>
+pub fn read<T>() -> Option<T>
 where
     T: Sized + StateFileName + TryFrom<String>,
     <T as std::convert::TryFrom<std::string::String>>::Error: std::fmt::Debug,
 {
     let path = get_data_path().join(T::name());
-    let content = std::fs::read(path)?;
-    let string = String::from_utf8(content)?;
-    Ok(string.try_into().unwrap())
+
+    if let Ok(content) = std::fs::read(path) {
+        let string = String::from_utf8(content).unwrap();
+        return Some(string.try_into().unwrap());
+    }
+
+    None
+}
+
+pub fn delete<T>() -> anyhow::Result<()>
+where
+    T: Display + StateFileName,
+{
+    let path = get_data_path().join(T::name());
+    std::fs::remove_file(path)?;
+    Ok(())
+}
+
+pub fn file_path<T>() -> PathBuf
+where
+    T: Display + StateFileName,
+{
+    get_data_path().join(T::name())
 }
 
 fn get_data_path() -> PathBuf {

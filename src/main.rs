@@ -37,15 +37,17 @@ fn main() -> Result<()> {
         .subcommand(cli::init_set_subcommand())
         .get_matches();
 
+    let mut sys = sysinfo::System::new_all();
+
     let config = Configuration::get_config(&args)?;
     let backend = match args.get_one::<Backend>("backend") {
         Some(backend) => backend,
-        None => &config.backend.clone(),
+        None => &config.backend,
     };
 
     match args.subcommand() {
         Some(("set", args)) => cli::handle_set_subcommand(args, backend, config),
-        Some(("daemon", args)) => cli::handle_daemon_subcommand(args, backend, config),
+        Some(("daemon", args)) => cli::handle_daemon_subcommand(args, backend, config, &mut sys),
         Some(("list", args)) => cli::handle_list_subcommand(args, config),
         None | Some((_, _)) => anyhow::bail!("No subcommand provided."),
     }

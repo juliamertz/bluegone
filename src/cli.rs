@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{builder::EnumValueParser, value_parser, Arg, ArgGroup, ArgMatches, Command};
+use clap::{builder::EnumValueParser, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 use crate::{
     backends::Backend,
@@ -75,10 +75,9 @@ pub fn init_daemon_subcommand() -> Command {
             Command::new("start").about("Start the daemon").arg(
                 Arg::new("background")
                     .short('b')
-                    .required(false)
                     .long("background")
-                    .help("Start daemon as a background process")
-                    .value_parser(EnumValueParser::<Backend>::new()),
+                    .action(ArgAction::SetTrue)
+                    .help("Start daemon as a background process"),
             ),
         )
         .subcommand(Command::new("stop").about("Stop the daemon"))
@@ -88,12 +87,19 @@ pub fn handle_daemon_subcommand(
     args: &ArgMatches,
     backend: &Backend,
     config: &Configuration,
+    sys: &mut sysinfo::System,
 ) -> Result<()> {
+    sys.refresh_all();
+
     match args.subcommand() {
-        Some(("start", _)) => {
-            daemon::start_daemon(config.clone(), backend)?;
+        Some(("start", args)) => {
+            let background = args.get_one::<bool>("background").unwrap_or(&false);
+
+            daemon::start_daemon(background, config.clone(), backend, sys)?;
         }
-        Some(("stop", _)) => unimplemented!(),
+        Some(("stop", _)) => {
+            daemon::stop_daemon(sys)?;
+        }
         None | Some((_, _)) => anyhow::bail!("No subcommand provided"),
     }
 
