@@ -1,6 +1,7 @@
 use crate::{
     backends::{Backend, Temperature},
     utils::RemoveSeconds,
+    Cli,
 };
 use anyhow::Result;
 use chrono::{prelude as crono, DateTime};
@@ -26,12 +27,33 @@ static CONFIG_PATHS: [&str; 3] = [
 ];
 
 impl Configuration {
-    pub fn get_config() -> Result<Self> {
+    fn from_str(content: &str) -> Result<Configuration> {
+        let config = match toml::from_str::<Self>(content) {
+            Ok(config) => config,
+            Err(err) => {
+                eprintln!("Error parsing config file: {}", err);
+                return Ok(Configuration::default());
+            }
+        };
+
+        Ok(config)
+    }
+
+    fn from_path(path: &str) -> Result<Configuration> {
+        let content = std::fs::read_to_string(path).expect("Could not read file");
+        Self::from_str(&content)
+    }
+
+    pub fn get_config(args: &Cli) -> Result<Self> {
         #[allow(deprecated)] // deprecated because of windows support.
         let home = match std::env::home_dir() {
             Some(path) => path,
-            None => return Ok(Configuration::default()),
+            None => return Ok(Self::default()),
         };
+
+        if let Some(path) = args.config.clone() {
+            return Self::from_path(&path);
+        }
 
         for path in CONFIG_PATHS.iter() {
             let path = path.strip_prefix('/').expect("Path to be valid");
@@ -41,16 +63,7 @@ impl Configuration {
                 continue;
             }
 
-            let content = std::fs::read_to_string(&path).expect("Could not read file");
-            let config = match toml::from_str::<Self>(&content) {
-                Ok(config) => config,
-                Err(err) => {
-                    eprintln!("Error parsing config file: {}", err);
-                    return Ok(Configuration::default());
-                }
-            };
-
-            return Ok(config);
+            return Self::from_path(path.to_str().expect("Path to be valid"));
         }
 
         Ok(Configuration::default())

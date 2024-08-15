@@ -10,7 +10,7 @@ pub type GammaValue = Vec<u16>;
 
 #[derive(Debug, Default, Clone)]
 pub enum Backend {
-    TTY,
+    Tty,
     #[default]
     X11,
 }
@@ -30,7 +30,7 @@ impl TryFrom<&str> for Backend {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_uppercase().as_str() {
-            "TTY" => Ok(Backend::TTY),
+            "TTY" => Ok(Backend::Tty),
             "X11" => Ok(Backend::X11),
             _ => anyhow::bail!("Invalid backend"),
         }
@@ -40,7 +40,7 @@ impl TryFrom<&str> for Backend {
 impl Backend {
     pub fn set_gamma(&self, gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
         match self {
-            Backend::TTY => set_gamma_for_tty(gamma_r, gamma_g, gamma_b),
+            Backend::Tty => set_gamma_for_tty(gamma_r, gamma_g, gamma_b),
             Backend::X11 => set_gamma_for_x11(gamma_r, gamma_g, gamma_b),
         }
     }
@@ -91,7 +91,8 @@ static TTY_COLOR_TABLE: &[&str] = &[
 ];
 
 pub fn set_gamma_for_tty(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
-    for i in 0..16 {
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..TTY_COLOR_TABLE.len() {
         let color = TTY_COLOR_TABLE[i];
         let flt_to_hex = |flt: f64| -> String {
             let flt = if flt > 255.0 { 255.0 } else { flt };

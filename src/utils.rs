@@ -16,13 +16,12 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
     let temp = temp / 100.0;
 
     // red
-    let r: f64;
-    if temp <= 66.0 {
-        r = 255.0;
+    let r: f64 = if temp <= 66.0 {
+        255.0
     } else {
         let t = temp - 60.0;
-        r = 329.698727446 * t.powf(-0.1332047592);
-    }
+        329.698727446 * t.powf(-0.1332047592)
+    };
 
     // green
     let mut g: f64;

@@ -14,6 +14,9 @@ struct Cli {
     /// Backend to use (X11 or TTY)
     #[arg(short, long)]
     backend: Option<String>,
+    /// Path to config file
+    #[arg(short, long)]
+    config: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -54,8 +57,8 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    let config = Configuration::get_config()?;
     let args = Cli::parse();
+    let config = Configuration::get_config(&args)?;
 
     let backend = match args.backend {
         Some(val) => Backend::try_from(val.as_str())?,
