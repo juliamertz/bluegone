@@ -13,8 +13,7 @@ pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
         anyhow::bail!("Static mode is not supported in the daemon.");
     }
 
-    state::write(Pid(std::process::id()));
-    // Pid::write_state()?;
+    state::write::<Pid>(std::process::id().into())?;
 
     let schedule = parse_schedule(&config);
     dbg!(schedule);

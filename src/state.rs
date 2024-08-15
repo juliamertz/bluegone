@@ -22,8 +22,7 @@ where
     let path = get_data_path().join(T::name());
     let content = std::fs::read(path)?;
     let string = String::from_utf8(content)?;
-    let result: T = string.try_into().unwrap();
-    Ok(result)
+    Ok(string.try_into().unwrap())
 }
 
 fn get_data_path() -> PathBuf {

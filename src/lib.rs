@@ -7,6 +7,12 @@ pub trait StateFileName {
 #[derive(Clone)]
 pub struct Pid(pub u32);
 
+impl From<u32> for Pid {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
 impl Display for Pid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.0)

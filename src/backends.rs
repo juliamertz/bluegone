@@ -8,7 +8,7 @@ use x11rb::rust_connection::RustConnection;
 pub type Temperature = f64;
 pub type GammaValue = Vec<u16>;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, clap::ValueEnum, Clone)]
 pub enum Backend {
     Tty,
     #[default]

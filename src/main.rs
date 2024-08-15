@@ -1,110 +1,52 @@
 mod backends;
+mod cli;
 mod config;
 mod daemon;
 mod state;
 mod utils;
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use backends::Backend;
-use clap::{Parser, Subcommand};
-use config::{Configuration, Mode};
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// Backend to use (X11 or TTY)
-    #[arg(short, long)]
-    backend: Option<String>,
-    /// Path to config file
-    #[arg(short, long)]
-    config: Option<String>,
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Debug, clap::Args)]
-#[group(required = true, multiple = false)]
-pub struct Group {
-    /// Temperature in Kelvin, between 0 and 6500
-    #[arg(short, long)]
-    temperature: Option<f64>,
-    /// Preset to apply
-    #[arg(short, long)]
-    preset: Option<String>,
-    /// Which mode to use (dynamic, static)
-    #[arg(short, long)]
-    mode: Option<String>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Commands {
-    ListPresets,
-    Set {
-        #[clap(flatten)]
-        group: Group,
-    },
-    Daemon {
-        #[arg(long)]
-        start: bool,
-        #[arg(long)]
-        stop: bool,
-    },
-}
+use clap::{builder::EnumValueParser, value_parser, Arg};
+use config::Configuration;
 
 fn main() -> Result<()> {
-    let args = Cli::parse();
-    let config = Configuration::get_config(&args)?;
+    let args = clap::Command::new("bluegone")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .arg(
+            Arg::new("config")
+                .short('c')
+                .required(false)
+                .long("config")
+                .help("Path to configuration file")
+                .value_parser(value_parser!(PathBuf)),
+        )
+        .arg(
+            Arg::new("backend")
+                .short('b')
+                .required(false)
+                .long("backend")
+                .help("Backend to use")
+                .value_parser(EnumValueParser::<Backend>::new()),
+        )
+        .subcommand(cli::init_daemon_subcommand())
+        .subcommand(cli::init_list_subcommand())
+        .subcommand(cli::init_set_subcommand())
+        .get_matches();
 
-    let backend = match args.backend {
-        Some(val) => Backend::try_from(val.as_str())?,
-        None => config.backend.clone(),
+    let config = Configuration::get_config(&args)?;
+    let backend = match args.get_one::<Backend>("backend") {
+        Some(backend) => backend,
+        None => &config.backend.clone(),
     };
 
-    match args.command {
-        Some(Commands::Daemon { start, stop }) => {
-            if start {
-                daemon::start_daemon(config.clone(), &backend)?;
-            } else if stop {
-                // return daemon::stop_daemon();
-            }
-        }
-        Some(Commands::Set {
-            group:
-                Group {
-                    temperature: Some(value),
-                    ..
-                },
-            ..
-        }) => backend.set_temperature(value)?,
-
-        Some(Commands::Set {
-            group: Group {
-                mode: Some(value), ..
-            },
-        }) => {
-            state::write(Mode::try_from(value)?)?;
-            println!("Ok!");
-        }
-
-        Some(Commands::Set {
-            group: Group {
-                preset: Some(value),
-                ..
-            },
-            ..
-        }) => {
-            let preset = config.presets.iter().find(|p| p.name == value);
-            if let Some(preset) = preset {
-                backend.set_temperature(preset.temperature)?;
-            }
-        }
-        Some(Commands::ListPresets) => {
-            for preset in config.presets {
-                println!("{}: {}K", preset.name, preset.temperature);
-            }
-        }
-        _ => {}
+    match args.subcommand() {
+        Some(("set", args)) => cli::handle_set_subcommand(args, backend, config),
+        Some(("daemon", args)) => cli::handle_daemon_subcommand(args, backend, config),
+        Some(("list", args)) => cli::handle_list_subcommand(args, config),
+        None | Some((_, _)) => anyhow::bail!("No subcommand provided."),
     }
-
-    Ok(())
 }

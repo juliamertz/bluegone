@@ -1,13 +1,13 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf, sync::OnceLock};
 
 use crate::{
     backends::{Backend, Temperature},
     utils::{self, RemoveSeconds},
-    Cli,
 };
 use anyhow::Result;
 use bluegone::StateFileName;
 use chrono::{prelude as crono, DateTime};
+use clap::ArgMatches;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -29,8 +29,9 @@ static CONFIG_PATHS: [&str; 3] = [
     "/.bluegone.toml",
 ];
 
+static CONFIG: OnceLock<Configuration> = OnceLock::new();
 impl Configuration {
-    fn from_str(content: &str) -> Result<Configuration> {
+    fn from_str(content: &str) -> Result<Self> {
         let config = match toml::from_str::<Self>(content) {
             Ok(config) => config,
             Err(err) => {
@@ -42,34 +43,42 @@ impl Configuration {
         Ok(config)
     }
 
-    fn from_path(path: &str) -> Result<Configuration> {
+    fn from_path(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        println!("Reading configuration from {}", path);
+        println!("Reading configuration from {:?}", path);
         Self::from_str(&content)
     }
 
-    pub fn get_config(args: &Cli) -> Result<Self> {
-        let home = utils::home_dir();
-
-        if let Some(path) = args.config.clone() {
-            return Self::from_path(&path);
+    pub fn get_config(args: &ArgMatches) -> Result<&Self> {
+        if let Some(data) = CONFIG.get() {
+            return Ok(data);
         }
 
-        for path in CONFIG_PATHS.iter() {
-            let path = path.strip_prefix('/').expect("Path to be valid");
-            let path = home.join(path);
-
-            if std::fs::metadata(&path).is_err() {
-                continue;
+        match args.get_one::<PathBuf>("config") {
+            Some(path) => {
+                let data = Self::from_path(path)?;
+                CONFIG.set(data).expect("OnceLock to be unlocked");
             }
+            None => {
+                for path in CONFIG_PATHS.iter() {
+                    let path = path.strip_prefix('/').expect("Path to be valid");
+                    let path = utils::home_dir().join(path);
 
-            return Self::from_path(path.to_str().expect("Path to be valid"));
-        }
+                    if std::fs::metadata(&path).is_err() {
+                        continue;
+                    }
+                    let data = Self::from_path(&path)?;
+                    CONFIG.set(data).expect("OnceLock to be unlocked");
+                    break;
+                }
+            }
+        };
 
-        Ok(Configuration::default())
+        Ok(CONFIG.get().expect("Config to be set"))
     }
 }
-#[derive(Deserialize, Debug, Default, Clone, PartialEq)]
+
+#[derive(Deserialize, Debug, clap::ValueEnum, Default, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
@@ -187,7 +196,7 @@ impl Schedule {
     pub fn get_time(&self, location: &Option<Location>) -> Result<chrono::NaiveTime> {
         self.get_trigger().get_time(location)
     }
-    pub fn get_temperature(&self, presets: &Vec<Preset>) -> Temperature {
+    pub fn get_temperature(&self, presets: &[Preset]) -> Temperature {
         match self {
             Schedule::Temperature { temperature, .. } => temperature.to_owned(),
             Schedule::Preset { preset, .. } => {
