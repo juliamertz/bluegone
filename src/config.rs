@@ -1,9 +1,12 @@
-use crate::backends::{Backend, Temperature};
+use crate::{
+    backends::{Backend, Temperature},
+    utils::RemoveSeconds,
+};
 use anyhow::Result;
-use chrono::prelude as crono;
+use chrono::{prelude as crono, DateTime, Timelike};
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Configuration {
     #[serde(default)]
     pub backend: Backend,
@@ -15,21 +18,21 @@ pub struct Configuration {
     pub schedule: Vec<Schedule>,
 }
 
-#[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "snake_case")]
+#[derive(Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
     Static,
     Dynamic,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Preset {
     pub name: String,
     pub temperature: Temperature,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Schedule {
     Temperature {
         trigger: ScheduleTrigger,
@@ -47,16 +50,64 @@ pub enum ScheduleLightTrigger {
     Sunrise,
 }
 
+impl ScheduleLightTrigger {
+    pub fn get_time(&self, location: Location) -> Result<chrono::NaiveTime> {
+        let now = crono::Local::now();
+        let params = sunrise_sunset_calculator::SunriseSunsetParameters::new(
+            now.timestamp(),
+            location.latitude,
+            location.longitude,
+        );
+
+        let time_from_millis = |millis: i64| {
+            let as_time = DateTime::from_timestamp(millis, 0).unwrap().time();
+            as_time
+        };
+
+        let result = params.calculate()?;
+
+        match self {
+            ScheduleLightTrigger::Sunset => Ok(time_from_millis(result.set).remove_seconds()),
+            ScheduleLightTrigger::Sunrise => Ok(time_from_millis(result.rise).remove_seconds()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ScheduleTrigger {
     Time(crono::NaiveTime),
     Light(ScheduleLightTrigger),
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Location {
     pub latitude: f64,
     pub longitude: f64,
+}
+
+impl Schedule {
+    pub fn get_time(&self, location: &Option<Location>) -> Result<chrono::NaiveTime> {
+        self.get_trigger().get_time(location)
+    }
+    pub fn get_trigger(&self) -> &ScheduleTrigger {
+        match self {
+            Schedule::Temperature { trigger, .. } => trigger,
+            Schedule::Preset { trigger, .. } => trigger,
+        }
+    }
+}
+
+impl ScheduleTrigger {
+    pub fn get_time(&self, location: &Option<Location>) -> Result<chrono::NaiveTime> {
+        match self {
+            ScheduleTrigger::Time(time) => Ok(*time),
+            ScheduleTrigger::Light(state) => state.get_time(
+                location
+                    .clone()
+                    .expect("Location should be set, unreachable state."),
+            ),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for ScheduleTrigger {
@@ -66,9 +117,9 @@ impl<'de> Deserialize<'de> for ScheduleTrigger {
     {
         let s = String::deserialize(deserializer)?;
 
-        let time_regex = regex::Regex::new(r"^\d{2}:\d{2}:\d{2}$").unwrap();
+        let time_regex = regex::Regex::new(r"^\d{2}:\d{2}$").unwrap();
         if let Some(time) = time_regex.captures(&s) {
-            let parsed_time = crono::NaiveTime::parse_from_str(&time[0], "%H:%M:%S");
+            let parsed_time = crono::NaiveTime::parse_from_str(&time[0], "%H:%M");
             if let Ok(t) = parsed_time {
                 return Ok(ScheduleTrigger::Time(t));
             }
@@ -130,8 +181,10 @@ impl<'a> Deserialize<'a> for Schedule {
 
 impl Configuration {
     pub fn parse_from_file(path: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(toml::from_str(&content)?)
+        Ok(match std::fs::read_to_string(path) {
+            Ok(content) => toml::from_str(&content).unwrap_or_default(),
+            Err(_) => Configuration::default(),
+        })
     }
 }
 
@@ -154,4 +207,33 @@ impl Default for Configuration {
             ],
         }
     }
+}
+
+pub fn get_next_scheduled_event(
+    schedules: Vec<Schedule>,
+    location: Option<Location>,
+) -> Result<Schedule> {
+    let now = chrono::Local::now();
+    let mut result = schedules
+        .clone()
+        .into_iter()
+        .filter(|schedule| {
+            let time = schedule.get_time(&location).expect("No time found");
+            return now.time() < time;
+        })
+        .collect::<Vec<_>>();
+
+    result.sort_by(|a, b| {
+        let a = a.get_time(&location).expect("No time found");
+        let b = b.get_time(&location).expect("No time found");
+        a.cmp(&b)
+    });
+
+    dbg!(&result);
+
+    if result.is_empty() || result.len() == 0 {
+        return Err(anyhow::anyhow!("No events found"));
+    }
+
+    Ok(result[0].clone())
 }

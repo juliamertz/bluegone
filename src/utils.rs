@@ -49,6 +49,7 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
     (rgb_to_gamma(r), rgb_to_gamma(g), rgb_to_gamma(b))
 }
 
+use chrono::Timelike;
 use sunrise_sunset_calculator::SunriseSunsetParameters;
 
 pub fn sunrise_and_set(latitude: f64, longitude: f64) -> Result<(i64, i64)> {
@@ -58,5 +59,31 @@ pub fn sunrise_and_set(latitude: f64, longitude: f64) -> Result<(i64, i64)> {
     match params.calculate() {
         Ok(result) => Ok((result.set, result.rise)),
         Err(e) => anyhow::bail!("Error calculating sunrise and sunset: {}", e),
+    }
+}
+
+pub trait RemoveSeconds<T>
+where
+    T: chrono::Timelike,
+{
+    /// Should panic if the time is invalid
+    fn remove_seconds(&self) -> Self;
+}
+
+impl RemoveSeconds<chrono::NaiveTime> for chrono::NaiveTime {
+    fn remove_seconds(&self) -> Self {
+        self.with_second(0)
+            .expect("time to be valid")
+            .with_nanosecond(0)
+            .expect("time to be valid")
+    }
+}
+
+impl RemoveSeconds<chrono::DateTime<chrono::Local>> for chrono::DateTime<chrono::Local> {
+    fn remove_seconds(&self) -> Self {
+        self.with_second(0)
+            .expect("time to be valid")
+            .with_nanosecond(0)
+            .expect("time to be valid")
     }
 }

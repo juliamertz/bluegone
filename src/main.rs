@@ -1,5 +1,6 @@
 mod backends;
 mod config;
+mod daemon;
 mod utils;
 
 use anyhow::Result;
@@ -19,24 +20,26 @@ struct Args {
     /// Preset to apply
     #[arg(short, long)]
     preset: Option<String>,
+    /// List available presets
+    #[arg(long)]
+    list_presets: bool,
+    /// Start as daemon
+    #[arg(short, long)]
+    daemon: bool,
 }
 
 fn main() -> Result<()> {
     let config = Configuration::parse_from_file("config.toml")?;
-    // dbg!(&config);
-
-    // if let Some(location) = config.location {
-    //     let (latitude, longitude) = (location.latitude, location.longitude);
-    //     let (sunrise, sunset) = utils::sunrise_and_set(latitude, longitude)?;
-    //     println!("Sunrise: {}, Sunset: {}", sunrise, sunset);
-    // }
-
     let args = Args::parse();
 
     let backend = match args.backend {
         Some(val) => &Backend::try_from(val.as_str())?,
         None => &config.backend,
     };
+
+    if args.daemon {
+        return daemon::start_daemon(config.clone(), backend);
+    }
 
     if let Some(preset) = args.preset {
         let preset = config.presets.iter().find(|p| p.name == preset);
