@@ -1,6 +1,8 @@
+use std::fmt::Display;
+
 use crate::{
     backends::{Backend, Temperature},
-    utils::RemoveSeconds,
+    utils::{self, RemoveSeconds},
     Cli,
 };
 use anyhow::Result;
@@ -40,16 +42,13 @@ impl Configuration {
     }
 
     fn from_path(path: &str) -> Result<Configuration> {
-        let content = std::fs::read_to_string(path).expect("Could not read file");
+        let content = std::fs::read_to_string(path)?;
+        println!("Reading configuration from {}", path);
         Self::from_str(&content)
     }
 
     pub fn get_config(args: &Cli) -> Result<Self> {
-        #[allow(deprecated)] // deprecated because of windows support.
-        let home = match std::env::home_dir() {
-            Some(path) => path,
-            None => return Ok(Self::default()),
-        };
+        let home = utils::home_dir();
 
         if let Some(path) = args.config.clone() {
             return Self::from_path(&path);
@@ -75,6 +74,25 @@ pub enum Mode {
     #[default]
     Static,
     Dynamic,
+}
+
+impl Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = format!("{:?}", self);
+        f.write_str(&text.to_lowercase())
+    }
+}
+
+impl TryFrom<String> for Mode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> std::prelude::v1::Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "dynamic" => Ok(Mode::Dynamic),
+            "static" => Ok(Mode::Static),
+            _ => anyhow::bail!("No such mode"),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -110,10 +128,14 @@ impl ScheduleLightTrigger {
             location.longitude,
         );
 
-        let time_from_millis = |millis: i64| DateTime::from_timestamp(millis, 0).unwrap().time();
+        let time_from_millis = |millis: i64| {
+            DateTime::from_timestamp(millis, 0)
+                .unwrap()
+                .with_timezone(&chrono::Local)
+                .time()
+        };
 
         let result = params.calculate()?;
-
         match self {
             ScheduleLightTrigger::Sunset => Ok(time_from_millis(result.set).remove_seconds()),
             ScheduleLightTrigger::Sunrise => Ok(time_from_millis(result.rise).remove_seconds()),
@@ -158,6 +180,18 @@ impl Schedule {
     pub fn get_time(&self, location: &Option<Location>) -> Result<chrono::NaiveTime> {
         self.get_trigger().get_time(location)
     }
+    pub fn get_temperature(&self, presets: &Vec<Preset>) -> Temperature {
+        match self {
+            Schedule::Temperature { temperature, .. } => temperature.to_owned(),
+            Schedule::Preset { preset, .. } => {
+                presets
+                    .iter()
+                    .find(|p| p.name == *preset)
+                    .unwrap()
+                    .temperature
+            }
+        }
+    }
     pub fn get_trigger(&self) -> &ScheduleTrigger {
         match self {
             Schedule::Temperature { trigger, .. } => trigger,
@@ -177,35 +211,6 @@ impl ScheduleTrigger {
             ),
         }
     }
-}
-
-pub fn get_next_scheduled_event(
-    schedules: Vec<Schedule>,
-    location: Option<Location>,
-) -> Result<Schedule> {
-    let now = chrono::Local::now();
-    let mut result = schedules
-        .clone()
-        .into_iter()
-        .filter(|schedule| {
-            let time = schedule.get_time(&location).expect("No time found");
-            now.time() < time
-        })
-        .collect::<Vec<_>>();
-
-    result.sort_by(|a, b| {
-        let a = a.get_time(&location).expect("No time found");
-        let b = b.get_time(&location).expect("No time found");
-        a.cmp(&b)
-    });
-
-    dbg!(&result);
-
-    if result.is_empty() || result.is_empty() {
-        anyhow::bail!("No events found");
-    }
-
-    Ok(result[0].clone())
 }
 
 impl<'de> Deserialize<'de> for ScheduleTrigger {

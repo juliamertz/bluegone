@@ -1,9 +1,11 @@
 use crate::{
-    backends::Backend,
-    config::{self, Configuration, Schedule, ScheduleTrigger},
+    backends::{Backend, Temperature},
+    config::{self, Configuration, Mode},
+    state::StateFile,
     utils::RemoveSeconds,
 };
 use anyhow::Result;
+use bluegone::Pid;
 use chrono::Timelike;
 
 pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
@@ -11,29 +13,71 @@ pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
         anyhow::bail!("Static mode is not supported in the daemon.");
     }
 
-    let schedule_needs_location = config
-        .schedule
-        .iter()
-        .any(|schedule| matches!(schedule.get_trigger(), ScheduleTrigger::Light(_)));
+    Pid::write_state(Pid(std::process::id()))?;
 
-    if config.location.is_none() && schedule_needs_location {
-        anyhow::bail!("Location configuration is required for scheduling with sunrise/sunset.");
-    }
-
-    let next_event =
-        &config::get_next_scheduled_event(config.schedule.clone(), config.location.clone());
-    match next_event {
-        Ok(event) => start_event_loop(&config, event.clone(), backend)?,
-        Err(_) => {
-            std::thread::sleep(std::time::Duration::from_secs(60 * 5));
-            start_daemon(config, backend)?;
-        }
-    }
+    let schedule = parse_schedule(&config);
+    dbg!(schedule);
+    start_event_loop(&config, backend)?;
 
     Ok(())
 }
 
-fn start_event_loop(config: &Configuration, event: Schedule, backend: &Backend) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+pub struct ScheduleBlock {
+    start: chrono::NaiveTime,
+    end: chrono::NaiveTime,
+    temperature: Temperature,
+}
+
+fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
+    let mut mapped: Vec<(chrono::NaiveTime, Temperature)> = config
+        .schedule
+        .iter()
+        .filter_map(|s| {
+            match s.get_time(&config.location) {
+                Ok(time) => Some((time, s.get_temperature(&config.presets))),
+                Err(_) => None, // FIX: Don't just ignore invalid schedule entries
+            }
+        })
+        .collect();
+    mapped.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut result: Vec<ScheduleBlock> = Vec::with_capacity(config.schedule.len());
+    for i in 0..mapped.len() {
+        let end_index = if i + 1 >= mapped.len() { 0 } else { i + 1 };
+        let (start, temperature) = mapped[i];
+        let (end, _) = mapped[end_index];
+        result.push(ScheduleBlock {
+            start,
+            end,
+            temperature,
+        })
+    }
+
+    result
+}
+
+pub fn get_current_schedule_block(schedule: Vec<ScheduleBlock>) -> Option<ScheduleBlock> {
+    let now = chrono::Local::now();
+    let midnight = chrono::NaiveTime::parse_from_str("00:00:00", "%H:%M:%S").unwrap();
+
+    schedule.into_iter().find(|schedule| {
+        let now = now.time();
+        if schedule.end < schedule.start {
+            if now >= schedule.start {
+                return true;
+            }
+
+            if now > midnight && now < schedule.end {
+                return true;
+            }
+        }
+
+        now >= schedule.start && now <= schedule.end
+    })
+}
+
+fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
     // wait till the next full minute so we get a nice round number
     let now = chrono::Local::now();
     let next_minute = now.with_minute(now.minute() + 1).unwrap().remove_seconds();
@@ -45,37 +89,20 @@ fn start_event_loop(config: &Configuration, event: Schedule, backend: &Backend) 
 
     loop {
         let now = chrono::Local::now().remove_seconds().time();
+        let mode = match Mode::read_state() {
+            Ok(mode) => mode,
+            Err(_) => config.mode.clone(),
+        };
 
         println!("Checking event at {:?}", now);
-        dbg!(now, event.get_trigger().get_time(&config.location)?);
 
-        let event_time = event.get_trigger().get_time(&config.location)?;
-        if now == event_time {
-            println!("Event time reached: {:?}", event_time);
-            match event {
-                Schedule::Preset { preset, .. } => {
-                    let preset = config
-                        .presets
-                        .iter()
-                        .find(|p| p.name == preset)
-                        .expect("Preset not found");
-                    backend.set_temperature(preset.temperature)?;
-                }
-                Schedule::Temperature { temperature, .. } => {
-                    backend.set_temperature(temperature)?;
-                }
+        if mode == Mode::Dynamic {
+            let schedule = parse_schedule(config); // TODO: optimize
+            if let Some(block) = get_current_schedule_block(schedule) {
+                backend.set_temperature(block.temperature)?;
             }
-            break;
         }
 
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
-
-    if let Ok(next_event) =
-        config::get_next_scheduled_event(config.schedule.clone(), config.location.clone())
-    {
-        start_event_loop(config, next_event, backend)?;
-    }
-
-    Err(anyhow::anyhow!("No next event found"))
 }

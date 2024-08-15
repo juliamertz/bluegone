@@ -1,12 +1,14 @@
 mod backends;
 mod config;
 mod daemon;
+mod state;
 mod utils;
 
 use anyhow::Result;
 use backends::Backend;
 use clap::{Parser, Subcommand};
-use config::Configuration;
+use config::{Configuration, Mode};
+use state::StateFile;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -21,15 +23,6 @@ struct Cli {
     command: Option<Commands>,
 }
 
-// #[derive(Debug, clap::Args)]
-// #[clap(name = "command")]
-// pub struct MyCommand {
-//     #[clap(flatten)]
-//     group: Group,
-//     #[clap(name = "others", long)]
-//     other_commands: Option<String>,
-// }
-
 #[derive(Debug, clap::Args)]
 #[group(required = true, multiple = false)]
 pub struct Group {
@@ -39,6 +32,9 @@ pub struct Group {
     /// Preset to apply
     #[arg(short, long)]
     preset: Option<String>,
+    /// Which mode to use (dynamic, static)
+    #[arg(short, long)]
+    mode: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -79,13 +75,24 @@ fn main() -> Result<()> {
                     temperature: Some(value),
                     ..
                 },
+            ..
         }) => backend.set_temperature(value)?,
+
+        Some(Commands::Set {
+            group: Group {
+                mode: Some(value), ..
+            },
+        }) => {
+            Mode::write_state(Mode::try_from(value)?)?;
+            println!("Ok!");
+        }
 
         Some(Commands::Set {
             group: Group {
                 preset: Some(value),
                 ..
             },
+            ..
         }) => {
             let preset = config.presets.iter().find(|p| p.name == value);
             if let Some(preset) = preset {

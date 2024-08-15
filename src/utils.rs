@@ -1,4 +1,12 @@
-use std::f64;
+use std::{f64, path::PathBuf};
+
+pub fn home_dir() -> PathBuf {
+    #[allow(deprecated)] // deprecated because of windows support.
+    match std::env::home_dir() {
+        Some(path) => path,
+        None => std::env::temp_dir(),
+    }
+}
 
 /// Transforms temperature in Kelvin to Gamma values between 0 and 1.
 /// Source: http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
