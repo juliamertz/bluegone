@@ -1,5 +1,6 @@
 use crate::utils::temp_to_gamma;
 use anyhow::Result;
+use serde::Deserialize;
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::*;
 use x11rb::rust_connection::RustConnection;
@@ -7,18 +8,30 @@ use x11rb::rust_connection::RustConnection;
 pub type Temperature = f64;
 pub type GammaValue = Vec<u16>;
 
+#[derive(Debug, Default)]
 pub enum Backend {
     TTY,
+    #[default]
     X11,
+}
+
+impl<'a> Deserialize<'a> for Backend {
+    fn deserialize<D>(deserializer: D) -> Result<Backend, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Backend::try_from(s.as_str()).map_err(serde::de::Error::custom)
+    }
 }
 
 impl TryFrom<&str> for Backend {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "tty" => Ok(Backend::TTY),
-            "x11" => Ok(Backend::X11),
+        match value.to_uppercase().as_str() {
+            "TTY" => Ok(Backend::TTY),
+            "X11" => Ok(Backend::X11),
             _ => anyhow::bail!("Invalid backend"),
         }
     }
@@ -27,8 +40,8 @@ impl TryFrom<&str> for Backend {
 impl Backend {
     pub fn set_gamma(&self, gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
         match self {
-            Backend::TTY => set_tty_gamma(gamma_r, gamma_g, gamma_b),
-            Backend::X11 => set_x11_gamma(gamma_r, gamma_g, gamma_b),
+            Backend::TTY => set_gamma_for_tty(gamma_r, gamma_g, gamma_b),
+            Backend::X11 => set_gamma_for_x11(gamma_r, gamma_g, gamma_b),
         }
     }
 
@@ -38,7 +51,7 @@ impl Backend {
     }
 }
 
-pub fn set_x11_gamma(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
+pub fn set_gamma_for_x11(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
     let (conn, _) = RustConnection::connect(None)?;
 
     let screen = &conn.setup().roots[0];
@@ -77,7 +90,7 @@ static TTY_COLOR_TABLE: &'static [&str] = &[
     "ff5555", "55ff55", "ffff55", "5555ff", "ff55ff", "55ffff", "ffffff",
 ];
 
-pub fn set_tty_gamma(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
+pub fn set_gamma_for_tty(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
     for i in 0..16 {
         let color = TTY_COLOR_TABLE[i];
         let flt_to_hex = |flt: f64| -> String {
@@ -91,7 +104,7 @@ pub fn set_tty_gamma(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()> {
 
         let string = format!("{:X}{}{}{}", i, hex_r, hex_g, hex_b);
 
-        println!("\x1B]P{}", string);
+        print!("\x1B]P{}", string);
     }
 
     Ok(())
