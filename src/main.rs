@@ -46,9 +46,9 @@ enum Commands {
         group: Group,
     },
     Daemon {
-        #[arg(short, long)]
+        #[arg(long)]
         start: bool,
-        #[arg(short, long)]
+        #[arg(long)]
         stop: bool,
     },
 }
@@ -58,14 +58,14 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     let backend = match args.backend {
-        Some(val) => &Backend::try_from(val.as_str())?,
-        None => &config.backend,
+        Some(val) => Backend::try_from(val.as_str())?,
+        None => config.backend.clone(),
     };
 
     match args.command {
         Some(Commands::Daemon { start, stop }) => {
             if start {
-                daemon::start_daemon(config.clone(), backend)?;
+                daemon::start_daemon(config.clone(), &backend)?;
             } else if stop {
                 // return daemon::stop_daemon();
             }

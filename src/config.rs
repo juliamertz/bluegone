@@ -34,10 +34,10 @@ impl Configuration {
         };
 
         for path in CONFIG_PATHS.iter() {
-            let path = path.strip_prefix("/").expect("Path to be valid");
+            let path = path.strip_prefix('/').expect("Path to be valid");
             let path = home.join(path);
 
-            if !std::fs::metadata(&path).is_ok() {
+            if std::fs::metadata(&path).is_err() {
                 continue;
             }
 
@@ -98,8 +98,8 @@ impl ScheduleLightTrigger {
         );
 
         let time_from_millis = |millis: i64| {
-            let as_time = DateTime::from_timestamp(millis, 0).unwrap().time();
-            as_time
+            
+            DateTime::from_timestamp(millis, 0).unwrap().time()
         };
 
         let result = params.calculate()?;
@@ -179,7 +179,7 @@ pub fn get_next_scheduled_event(
         .into_iter()
         .filter(|schedule| {
             let time = schedule.get_time(&location).expect("No time found");
-            return now.time() < time;
+            now.time() < time
         })
         .collect::<Vec<_>>();
 
@@ -191,7 +191,7 @@ pub fn get_next_scheduled_event(
 
     dbg!(&result);
 
-    if result.is_empty() || result.len() == 0 {
+    if result.is_empty() || result.is_empty() {
         anyhow::bail!("No events found");
     }
 
@@ -238,12 +238,12 @@ impl<'a> Deserialize<'a> for Schedule {
 
         match (has_temperature, has_preset) {
             (true, true) => {
-                return Err(serde::de::Error::custom(
+                Err(serde::de::Error::custom(
                     "Cannot have both temperature and preset fields",
                 ))
             }
             (false, false) => {
-                return Err(serde::de::Error::custom(
+                Err(serde::de::Error::custom(
                     "Must have either temperature or preset field",
                 ))
             }

@@ -62,7 +62,7 @@ pub fn set_gamma_for_x11(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()>
     for &crtc in &res.crtcs {
         let size = conn.randr_get_crtc_gamma_size(crtc)?.reply()?.size as usize;
 
-        let start = 0 as u16;
+        let start = 0_u16;
         let mut gamma = Gamma {
             red: vec![start; size],
             green: vec![start; size],
@@ -85,7 +85,7 @@ pub fn set_gamma_for_x11(gamma_r: f64, gamma_g: f64, gamma_b: f64) -> Result<()>
 
 // TTY
 
-static TTY_COLOR_TABLE: &'static [&str] = &[
+static TTY_COLOR_TABLE: &[&str] = &[
     "000000", "aa0000", "00aa00", "aa5500", "0000aa", "aa00aa", "00aaaa", "aaaaaa", "555555",
     "ff5555", "55ff55", "ffff55", "5555ff", "ff55ff", "55ffff", "ffffff",
 ];
