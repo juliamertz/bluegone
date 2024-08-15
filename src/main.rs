@@ -9,11 +9,12 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use backends::Backend;
-use clap::{builder::EnumValueParser, value_parser, Arg};
+use clap::{builder::EnumValueParser, command, value_parser, Arg};
 use config::Configuration;
 
 fn main() -> Result<()> {
-    let args = clap::Command::new("bluegone")
+    let args = command!("bluegone")
+        .propagate_version(true)
         .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
