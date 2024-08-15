@@ -6,6 +6,7 @@ use crate::{
     Cli,
 };
 use anyhow::Result;
+use bluegone::StateFileName;
 use chrono::{prelude as crono, DateTime};
 use serde::Deserialize;
 
@@ -92,6 +93,12 @@ impl TryFrom<String> for Mode {
             "static" => Ok(Mode::Static),
             _ => anyhow::bail!("No such mode"),
         }
+    }
+}
+
+impl StateFileName for Mode {
+    fn name() -> String {
+        "mode".into()
     }
 }
 

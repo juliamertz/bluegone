@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+pub trait StateFileName {
+    fn name() -> String;
+}
+
 #[derive(Clone)]
 pub struct Pid(pub u32);
 
@@ -14,5 +18,11 @@ impl TryFrom<String> for Pid {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(Pid(value.parse()?))
+    }
+}
+
+impl StateFileName for Pid {
+    fn name() -> String {
+        "pid".into()
     }
 }

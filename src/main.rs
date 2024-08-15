@@ -8,7 +8,6 @@ use anyhow::Result;
 use backends::Backend;
 use clap::{Parser, Subcommand};
 use config::{Configuration, Mode};
-use state::StateFile;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -83,7 +82,7 @@ fn main() -> Result<()> {
                 mode: Some(value), ..
             },
         }) => {
-            Mode::write_state(Mode::try_from(value)?)?;
+            state::write(Mode::try_from(value)?)?;
             println!("Ok!");
         }
 

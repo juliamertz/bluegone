@@ -1,7 +1,7 @@
 use crate::{
     backends::{Backend, Temperature},
     config::{self, Configuration, Mode},
-    state::StateFile,
+    state::{self},
     utils::RemoveSeconds,
 };
 use anyhow::Result;
@@ -13,7 +13,8 @@ pub fn start_daemon(config: Configuration, backend: &Backend) -> Result<()> {
         anyhow::bail!("Static mode is not supported in the daemon.");
     }
 
-    Pid::write_state(Pid(std::process::id()))?;
+    state::write(Pid(std::process::id()));
+    // Pid::write_state()?;
 
     let schedule = parse_schedule(&config);
     dbg!(schedule);
@@ -89,7 +90,7 @@ fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
 
     loop {
         let now = chrono::Local::now().remove_seconds().time();
-        let mode = match Mode::read_state() {
+        let mode: Mode = match state::read() {
             Ok(mode) => mode,
             Err(_) => config.mode.clone(),
         };
