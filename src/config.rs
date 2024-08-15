@@ -3,7 +3,7 @@ use crate::{
     utils::RemoveSeconds,
 };
 use anyhow::Result;
-use chrono::{prelude as crono, DateTime, Timelike};
+use chrono::{prelude as crono, DateTime};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -18,7 +18,45 @@ pub struct Configuration {
     pub schedule: Vec<Schedule>,
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+// Root is considered to be the users home directory
+static CONFIG_PATHS: [&str; 3] = [
+    "/.config/bluegone/config.toml",
+    "/.config/bluegone.toml",
+    "/.bluegone.toml",
+];
+
+impl Configuration {
+    pub fn get_config() -> Result<Self> {
+        #[allow(deprecated)] // deprecated because of windows support.
+        let home = match std::env::home_dir() {
+            Some(path) => path,
+            None => return Ok(Configuration::default()),
+        };
+
+        for path in CONFIG_PATHS.iter() {
+            let path = path.strip_prefix("/").expect("Path to be valid");
+            let path = home.join(path);
+
+            if !std::fs::metadata(&path).is_ok() {
+                continue;
+            }
+
+            let content = std::fs::read_to_string(&path).expect("Could not read file");
+            let config = match toml::from_str::<Self>(&content) {
+                Ok(config) => config,
+                Err(err) => {
+                    eprintln!("Error parsing config file: {}", err);
+                    return Ok(Configuration::default());
+                }
+            };
+
+            return Ok(config);
+        }
+
+        Ok(Configuration::default())
+    }
+}
+#[derive(Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
@@ -73,6 +111,27 @@ impl ScheduleLightTrigger {
     }
 }
 
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            location: None,
+            backend: Backend::default(),
+            mode: Mode::default(),
+            schedule: vec![],
+            presets: vec![
+                Preset {
+                    name: "day".to_string(),
+                    temperature: 6500.0,
+                },
+                Preset {
+                    name: "night".to_string(),
+                    temperature: 4000.0,
+                },
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ScheduleTrigger {
     Time(crono::NaiveTime),
@@ -108,6 +167,35 @@ impl ScheduleTrigger {
             ),
         }
     }
+}
+
+pub fn get_next_scheduled_event(
+    schedules: Vec<Schedule>,
+    location: Option<Location>,
+) -> Result<Schedule> {
+    let now = chrono::Local::now();
+    let mut result = schedules
+        .clone()
+        .into_iter()
+        .filter(|schedule| {
+            let time = schedule.get_time(&location).expect("No time found");
+            return now.time() < time;
+        })
+        .collect::<Vec<_>>();
+
+    result.sort_by(|a, b| {
+        let a = a.get_time(&location).expect("No time found");
+        let b = b.get_time(&location).expect("No time found");
+        a.cmp(&b)
+    });
+
+    dbg!(&result);
+
+    if result.is_empty() || result.len() == 0 {
+        return Err(anyhow::anyhow!("No events found"));
+    }
+
+    Ok(result[0].clone())
 }
 
 impl<'de> Deserialize<'de> for ScheduleTrigger {
@@ -177,63 +265,4 @@ impl<'a> Deserialize<'a> for Schedule {
             }
         }
     }
-}
-
-impl Configuration {
-    pub fn parse_from_file(path: &str) -> Result<Self> {
-        Ok(match std::fs::read_to_string(path) {
-            Ok(content) => toml::from_str(&content).unwrap_or_default(),
-            Err(_) => Configuration::default(),
-        })
-    }
-}
-
-impl Default for Configuration {
-    fn default() -> Self {
-        Configuration {
-            location: None,
-            backend: Backend::default(),
-            mode: Mode::default(),
-            schedule: vec![],
-            presets: vec![
-                Preset {
-                    name: "day".to_string(),
-                    temperature: 6500.0,
-                },
-                Preset {
-                    name: "night".to_string(),
-                    temperature: 4000.0,
-                },
-            ],
-        }
-    }
-}
-
-pub fn get_next_scheduled_event(
-    schedules: Vec<Schedule>,
-    location: Option<Location>,
-) -> Result<Schedule> {
-    let now = chrono::Local::now();
-    let mut result = schedules
-        .clone()
-        .into_iter()
-        .filter(|schedule| {
-            let time = schedule.get_time(&location).expect("No time found");
-            return now.time() < time;
-        })
-        .collect::<Vec<_>>();
-
-    result.sort_by(|a, b| {
-        let a = a.get_time(&location).expect("No time found");
-        let b = b.get_time(&location).expect("No time found");
-        a.cmp(&b)
-    });
-
-    dbg!(&result);
-
-    if result.is_empty() || result.len() == 0 {
-        return Err(anyhow::anyhow!("No events found"));
-    }
-
-    Ok(result[0].clone())
 }

@@ -1,6 +1,5 @@
 use std::f64;
 
-use anyhow::Result;
 /// Transforms temperature in Kelvin to Gamma values between 0 and 1.
 /// Source: http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
 pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
@@ -50,18 +49,6 @@ pub fn temp_to_gamma(temp: f64) -> (f64, f64, f64) {
 }
 
 use chrono::Timelike;
-use sunrise_sunset_calculator::SunriseSunsetParameters;
-
-pub fn sunrise_and_set(latitude: f64, longitude: f64) -> Result<(i64, i64)> {
-    let now = chrono::Local::now();
-    let params = SunriseSunsetParameters::new(now.timestamp(), latitude, longitude);
-
-    match params.calculate() {
-        Ok(result) => Ok((result.set, result.rise)),
-        Err(e) => anyhow::bail!("Error calculating sunrise and sunset: {}", e),
-    }
-}
-
 pub trait RemoveSeconds<T>
 where
     T: chrono::Timelike,
