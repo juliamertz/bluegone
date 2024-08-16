@@ -57,7 +57,7 @@ pub fn stop_daemon(sys: &mut System) -> Result<()> {
     Ok(())
 }
 
-fn find_process_by_id(pid: Pid, sys: &mut System) -> Option<&sysinfo::Process> {
+pub fn find_process_by_id(pid: Pid, sys: &mut System) -> Option<&sysinfo::Process> {
     let pid_state = &sysinfo::Pid::from_u32(pid.as_u32());
     sys.processes().get(pid_state)
 }
@@ -69,7 +69,7 @@ pub struct ScheduleBlock {
     temperature: Temperature,
 }
 
-fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
+pub fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
     let mut mapped: Vec<(chrono::NaiveTime, Temperature)> = config
         .schedule
         .iter()

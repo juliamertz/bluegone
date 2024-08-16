@@ -1,12 +1,39 @@
 use anyhow::Result;
+use bluegone::Pid;
 use clap::{builder::EnumValueParser, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 use crate::{
     backends::Backend,
     config::{Configuration, Mode},
-    daemon::{self},
-    state::{self},
+    daemon::{self, find_process_by_id, get_current_schedule, parse_schedule},
+    state,
 };
+
+pub fn init_info_subcommand() -> Command {
+    Command::new("info").about("List various configured options")
+}
+
+pub fn handle_info_subcommand(
+    args: &ArgMatches,
+    backend: &Backend,
+    config: &Configuration,
+    sys: &mut sysinfo::System,
+) -> Result<()> {
+    let process = match state::read::<Pid>() {
+        Some(pid) => find_process_by_id(pid, sys),
+        None => None,
+    };
+
+    let schedule = parse_schedule(config);
+    let schedule = get_current_schedule(schedule);
+
+    match process {
+        Some(process) => println!("Daemon active (pid: {})", process.pid()),
+        None => println!("Daemon inactive"),
+    }
+
+    Ok(())
+}
 
 pub fn init_set_subcommand() -> Command {
     Command::new("set")
@@ -15,7 +42,7 @@ pub fn init_set_subcommand() -> Command {
             Arg::new("temperature")
                 .short('t')
                 .long("temperature")
-                .help("Temperature to set in kelven, (0-6500)")
+                .help("Temperature to set in Kelvin, (0-6500)") // TODO: Custom parser with nice help message
                 .value_parser(value_parser!(f64)),
         )
         .arg(
@@ -23,7 +50,7 @@ pub fn init_set_subcommand() -> Command {
                 .short('m')
                 .long("mode")
                 .value_parser(EnumValueParser::<Mode>::new())
-                .help("Set mode the daemon uses, (static|dynamic)"),
+                .help("Set current mode, if set to dynamic the daemon will manage temperature"),
         )
         .arg(
             Arg::new("preset")
@@ -94,7 +121,6 @@ pub fn handle_daemon_subcommand(
     match args.subcommand() {
         Some(("start", args)) => {
             let background = args.get_one::<bool>("background").unwrap_or(&false);
-
             daemon::start_daemon(background, config.clone(), backend, sys)?;
         }
         Some(("stop", _)) => {
@@ -109,7 +135,7 @@ pub fn handle_daemon_subcommand(
 pub fn init_list_subcommand() -> Command {
     Command::new("list")
         .subcommand_required(true)
-        .about("List x")
+        .about("List various configured options")
         .subcommand(Command::new("presets").about("List all presets"))
 }
 

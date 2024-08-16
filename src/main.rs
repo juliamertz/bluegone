@@ -33,6 +33,7 @@ fn main() -> Result<()> {
                 .help("Backend to use")
                 .value_parser(EnumValueParser::<Backend>::new()),
         )
+        .subcommand(cli::init_info_subcommand())
         .subcommand(cli::init_daemon_subcommand())
         .subcommand(cli::init_list_subcommand())
         .subcommand(cli::init_set_subcommand())
@@ -48,6 +49,7 @@ fn main() -> Result<()> {
 
     match args.subcommand() {
         Some(("set", args)) => cli::handle_set_subcommand(args, backend, config),
+        Some(("info", args)) => cli::handle_info_subcommand(args, backend, config, &mut sys),
         Some(("daemon", args)) => cli::handle_daemon_subcommand(args, backend, config, &mut sys),
         Some(("list", args)) => cli::handle_list_subcommand(args, config),
         None | Some((_, _)) => anyhow::bail!("No subcommand provided."),
