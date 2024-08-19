@@ -1,12 +1,41 @@
-use crate::utils::temp_to_gamma;
+use crate::{
+    state::{self},
+    utils::temp_to_gamma,
+};
 use anyhow::Result;
+use bluegone::StateFileName;
 use serde::Deserialize;
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::*;
 use x11rb::rust_connection::RustConnection;
 
-pub type Temperature = f64;
 pub type GammaValue = Vec<u16>;
+// pub type Temperature = f64;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct Temperature(f64);
+
+impl Temperature {
+    pub fn new(value: f64) -> Self {
+        Self(value)
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for Temperature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl StateFileName for Temperature {
+    fn name() -> String {
+        "temperature".into()
+    }
+}
 
 #[derive(Debug, Default, clap::ValueEnum, Clone)]
 pub enum Backend {
@@ -46,7 +75,8 @@ impl Backend {
     }
 
     pub fn set_temperature(&self, temp: Temperature) -> Result<()> {
-        let gamma = temp_to_gamma(temp);
+        state::write(temp)?;
+        let gamma = temp_to_gamma(temp.as_f64());
         self.set_gamma(gamma.0, gamma.1, gamma.2)
     }
 }

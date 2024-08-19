@@ -1,4 +1,24 @@
-use std::{f64, path::PathBuf};
+use crate::utils::{self};
+use std::{f64, fs::File, path::PathBuf, str::FromStr};
+use anyhow::Result;
+
+pub fn get_data_path() -> PathBuf {
+    let cache_dir = match std::env::var("XDG_CACHE_DIR") {
+        Ok(path) => PathBuf::from_str(&path).expect("Valid path"),
+        Err(_) => utils::home_dir().join(".cache"),
+    };
+
+    cache_dir.join("bluegone")
+}
+
+pub fn new_log_file() -> Result<File> {
+    let timestamp = chrono::Local::now().to_rfc3339();
+    let filename = format!("bluegone-log-{}.txt", timestamp);
+    match File::create(filename) {
+        Ok(file) => Ok(file),
+        Err(e) => anyhow::bail!("Unable to create log file, {e}"),
+    }
+}
 
 pub fn home_dir() -> PathBuf {
     #[allow(deprecated)] // deprecated because of windows support.

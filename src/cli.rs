@@ -3,7 +3,7 @@ use bluegone::Pid;
 use clap::{builder::EnumValueParser, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 use crate::{
-    backends::Backend,
+    backends::{Backend, Temperature},
     config::{Configuration, Mode},
     daemon::{self, find_process_by_id, get_current_schedule, parse_schedule},
     state,
@@ -72,7 +72,8 @@ pub fn handle_set_subcommand(
     config: &Configuration,
 ) -> Result<()> {
     if let Some(value) = args.get_one::<f64>("temperature") {
-        backend.set_temperature(value.to_owned())?;
+        let temperature = Temperature::new(value.to_owned());
+        backend.set_temperature(temperature)?;
         state::write(Mode::Static)?;
         return Ok(());
     }
@@ -120,8 +121,7 @@ pub fn handle_daemon_subcommand(
 
     match args.subcommand() {
         Some(("start", args)) => {
-            let background = args.get_one::<bool>("background").unwrap_or(&false);
-            daemon::start_daemon(background, config.clone(), backend, sys)?;
+            daemon::start_daemon(args, config.clone(), backend, sys)?;
         }
         Some(("stop", _)) => {
             daemon::stop_daemon(sys)?;

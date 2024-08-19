@@ -2,16 +2,19 @@ use crate::{
     backends::{Backend, Temperature},
     config::{self, Configuration, Mode},
     state,
-    utils::RemoveSeconds,
+    utils::{self, RemoveSeconds},
 };
 use anyhow::Result;
 use bluegone::Pid;
-use chrono::Timelike;
+use chrono::{NaiveTime, Timelike};
+use clap::ArgMatches;
 use daemonize_me::Daemon;
+use signal_hook::{consts::{SIGINT, SIGTERM}, iterator::Signals};
+use std::thread;
 use sysinfo::System;
 
 pub fn start_daemon(
-    background: &bool,
+    args: &ArgMatches,
     config: Configuration,
     backend: &Backend,
     sys: &mut System,
@@ -20,6 +23,8 @@ pub fn start_daemon(
         anyhow::bail!("Static mode is not supported in the daemon.");
     }
 
+    // If there is a lingering pid file we check if that process is still running
+    // if not we can delete it and continue
     if let Some(pid) = state::read::<Pid>() {
         match find_process_by_id(pid, sys) {
             None => state::delete::<Pid>(),
@@ -27,19 +32,25 @@ pub fn start_daemon(
         }?;
     }
 
-    match *background {
-        true => {
+    env_logger::Builder::new()
+        .target(env_logger::Target::Stdout)
+        .init();
+
+    match args.get_one::<bool>("background") {
+        Some(true) => {
+            let log_file = utils::new_log_file()?;
             Daemon::new()
                 .pid_file(state::file_path::<Pid>(), Some(false))
-                // .stdout(stdout).stderr(stderr) TODO: LOG FILE
-                .start()?;
+                .stdout(log_file)
+                .start()?
         }
-        false => {
+        _ => {
             let pid: Pid = std::process::id().into();
             state::write(pid)?;
         }
     }
 
+    spawn_signal_handler()?;
     start_event_loop(&config, backend)?;
 
     Ok(())
@@ -64,58 +75,73 @@ pub fn find_process_by_id(pid: Pid, sys: &mut System) -> Option<&sysinfo::Proces
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScheduleBlock {
-    start: chrono::NaiveTime,
-    end: chrono::NaiveTime,
+    start: NaiveTime,
+    end: NaiveTime,
     temperature: Temperature,
 }
 
+impl ScheduleBlock {
+    pub fn new(start: NaiveTime, end: NaiveTime, temperature: Temperature) -> Self {
+        Self {
+            start,
+            end,
+            temperature,
+        }
+    }
+}
+
 pub fn parse_schedule(config: &Configuration) -> Vec<ScheduleBlock> {
-    let mut mapped: Vec<(chrono::NaiveTime, Temperature)> = config
+    let mut mapped: Vec<(NaiveTime, Temperature)> = config
         .schedule
         .iter()
         .filter_map(|s| match s.get_time(&config.location) {
-            Ok(time) => Some((time, s.get_temperature(&config.presets))),
+            Ok(time) => {
+                let temperature = s.get_temperature(&config.presets);
+                Some((time, temperature))
+            }
             Err(_) => {
                 eprintln!("Using time based schedule entry but no location was provided!");
                 None
             }
         })
         .collect();
-    mapped.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut result: Vec<ScheduleBlock> = Vec::with_capacity(config.schedule.len());
-    for i in 0..mapped.len() {
-        let end_index = if i + 1 >= mapped.len() { 0 } else { i + 1 };
-        let (start, temperature) = mapped[i];
-        let (end, _) = mapped[end_index];
-        result.push(ScheduleBlock {
-            start,
-            end,
-            temperature,
+    mapped.sort_by_key(|&(time, _)| time);
+
+    mapped
+        .iter()
+        .enumerate()
+        .map(|(i, &(start, temperature))| {
+            let end = mapped.get(i + 1).map_or(mapped[0].0, |&(end, _)| end);
+            ScheduleBlock::new(start, end, temperature)
         })
-    }
-
-    result
+        .collect()
 }
 
 pub fn get_current_schedule(schedule: Vec<ScheduleBlock>) -> Option<ScheduleBlock> {
-    let now = chrono::Local::now();
-    let midnight = chrono::NaiveTime::parse_from_str("00:00:00", "%H:%M:%S").unwrap();
+    let now = chrono::Local::now().time();
 
-    schedule.into_iter().find(|schedule| {
-        let now = now.time();
-        if schedule.end < schedule.start {
-            if now >= schedule.start {
-                return true;
-            }
-
-            if now > midnight && now < schedule.end {
-                return true;
-            }
+    schedule.into_iter().find(|block| {
+        if block.end < block.start {
+            // Schedule spans midnight
+            now >= block.start || now < block.end
+        } else {
+            // Regular schedule
+            now >= block.start && now <= block.end
         }
-
-        now >= schedule.start && now <= schedule.end
     })
+}
+
+fn spawn_signal_handler() -> Result<()> {
+    let mut signals = Signals::new([SIGINT, SIGTERM])?;
+
+    thread::spawn(move || {
+        for sig in signals.forever() {
+            println!("Received signal {:?}", sig);
+        }
+    });
+
+    Ok(())
 }
 
 fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
@@ -125,7 +151,7 @@ fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
 
     // TODO: Handle events that are scheduled before the next minute
     let until_next_minute = next_minute.signed_duration_since(now).to_std()?;
-    println!("Sleeping until next minute: {:?}", until_next_minute);
+    log::debug!("Sleeping until next minute: {:?}", until_next_minute);
     std::thread::sleep(until_next_minute);
 
     loop {
@@ -135,18 +161,19 @@ fn start_event_loop(config: &Configuration, backend: &Backend) -> Result<()> {
             None => config.mode.clone(),
         };
 
-        println!("Checking event at {:?}", now);
+        log::debug!("Checking event at {:?}", now);
 
         match mode {
             Mode::Dynamic => {
                 let schedule = parse_schedule(config); // TODO: optimize
                 if let Some(block) = get_current_schedule(schedule) {
+                    log::info!("matched schedule: {:?}", block);
                     backend.set_temperature(block.temperature)?;
-                    println!("Setting temperature to {}", block.temperature)
+                    log::info!("set temperature to {}", block.temperature);
                 }
             }
             Mode::Static => {
-                println!("Mode is set to static, sleeping until next minute")
+                log::debug!("Mode is set to static, sleeping until next minute");
             }
         }
 

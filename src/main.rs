@@ -6,7 +6,6 @@ mod state;
 mod utils;
 
 use std::path::PathBuf;
-
 use anyhow::Result;
 use backends::Backend;
 use clap::{builder::EnumValueParser, command, value_parser, Arg};

@@ -1,10 +1,9 @@
-// use anyhow::Result;
+use anyhow::Result;
 use bluegone::StateFileName;
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use crate::utils::get_data_path;
+use std::{fmt::Display, path::PathBuf};
 
-use crate::utils::{self};
-
-pub fn write<T>(value: T) -> anyhow::Result<()>
+pub fn write<T>(value: T) -> Result<()>
 where
     T: Display + StateFileName,
 {
@@ -29,7 +28,7 @@ where
     None
 }
 
-pub fn delete<T>() -> anyhow::Result<()>
+pub fn delete<T>() -> Result<()>
 where
     T: Display + StateFileName,
 {
@@ -43,13 +42,4 @@ where
     T: Display + StateFileName,
 {
     get_data_path().join(T::name())
-}
-
-fn get_data_path() -> PathBuf {
-    let cache_dir = match std::env::var("XDG_CACHE_DIR") {
-        Ok(path) => PathBuf::from_str(&path).expect("Valid path"),
-        Err(_) => utils::home_dir().join(".cache"),
-    };
-
-    cache_dir.join("bluegone")
 }

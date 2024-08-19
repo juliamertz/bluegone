@@ -170,11 +170,11 @@ impl Default for Configuration {
             presets: vec![
                 Preset {
                     name: "day".to_string(),
-                    temperature: 6500.0,
+                    temperature: Temperature::new(6500.0),
                 },
                 Preset {
                     name: "night".to_string(),
-                    temperature: 4000.0,
+                    temperature: Temperature::new(4000.0),
                 },
             ],
         }
@@ -204,7 +204,7 @@ impl Schedule {
                 presets
                     .iter()
                     .find(|p| p.name == *preset)
-                    .unwrap()
+                    .expect("preset to exist")
                     .temperature
             }
         }
